@@ -54,11 +54,25 @@ _volumes = {
 
 <b>Remediation:</b> All users should upgrade to <b>AWS SAM CLI v1.133.0</b> or later to get this fix. After upgrading, the default behavior is safe. Only if you explicitly trust your project and need the old behavior should you use `sam build --use-container --mount-symlinks`. For most developers, leaving this flag off (the default) is recommended to ensure that symlinks cannot traverse outside the workspace. It’s also good practice to review any symlinks in your projects to ensure they do not point to sensitive locations.
 
-#### CVE-2025-3047 – Symlink Path Traversal in Container Build
+#### CVE-2025-3048 – Symlink Path Traversal in Container Build
 [GHSA-pp64-wj43-xqcr​](https://github.com/advisories/GHSA-pp64-wj43-xqcr) is a related vulnerability affecting AWS SAM CLI <b><= v1.133.0</b> (fixed in v1.134.0). A vulnerability in AWS SAM CLI’s <b>build artifact caching</b> could allow sensitive files to leak from the container back to the host workspace after a build. If a project included symlinks, after running `sam build --use-container`, the <b>contents of the symlink targets would be copied into the local build cache directory</b> as regular files or folders​. In effect, a developer without access to certain host files could gain access because those files’ contents end up in the `.aws-sam` build output on the host. For example, a symlink in the project pointing to `/secret/config` could result in the actual content of `/secret/config` appearing in the project’s `.aws-sam/build` folder after the container build, even if the user couldn’t read `/secret/config` directly.
 
-<b>Root Cause & Affected Component:</b> 
+<b>Root Cause & Affected Component:</b> The core of this issue was in how SAM CLI copied files out of the container (or from the build process) into the local project’s build artifacts directory. The function responsible for file copying is found in `samcli/lib/utils/osutils.py`, specifically the custom `copytree` utility. In vulnerable versions, this function used Python’s `shutil.copy2` without specifying `follow_symlinks=False`, which by default <b>follows symlinks</b> and copies the file contents. The snippet below (from v1.133.0) shows the problematic logic:
 
+```python
+# samcli/lib/utils/osutils.py (v1.133.0 - vulnerable snippet)
+# ... inside osutils.copytree ...
+else:
+    try:
+        shutil.copy2(new_source, new_destination)  # follow_symlinks is True by default (vulnerable)
+    except OSError as e:
+        if e.errno != errno.EINVAL:
+            raise e
+```
+
+<i>Here, if `new_source` is a symlink, `shutil.copy2` will resolve the symlink and copy the target file to `new_destination`. There was no flag to tell it to preserve the symlink. Thus, a symlink to a sensitive file would result in that file’s <b>contents</b> appearing in the destination directory.</i> (see aws/aws-sam-cli#7890)
+
+In practical terms, imagine the build process created a symlink `config -> /etc/secret-config` (perhaps as part of layering dependencies or as left over from CVE-2025-3047’s scenario). The above code would copy the contents of `/etc/secret-config` into the local build output as `config`. A local user who couldn’t read `/etc/secret-config` directly could now simply open the file under `.aws-sam/build/.../config` and see its contents.
 
 <b>Patch (Fixed Code in v1.134.0):</b>
 
