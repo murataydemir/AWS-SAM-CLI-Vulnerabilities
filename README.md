@@ -74,11 +74,21 @@ else:
 
 In practical terms, imagine the build process created a symlink `config -> /etc/secret-config` (perhaps as part of layering dependencies or as left over from CVE-2025-3047’s scenario). The above code would copy the contents of `/etc/secret-config` into the local build output as `config`. A local user who couldn’t read `/etc/secret-config` directly could now simply open the file under `.aws-sam/build/.../config` and see its contents.
 
-<b>Patch (Fixed Code in v1.134.0):</b>
+<b>Patch (Fixed Code in v1.134.0):</b> The fix was straightforward – preserve symlinks instead of following them when copying. In Python’s shutil, this is done by passing `follow_symlinks=False`. The patched code (v1.134.0) changes the copy call as follows:
 
+```python
+# samcli/lib/utils/osutils.py (v1.134.0 - patched snippet)
+else:
+    try:
+        shutil.copy2(new_source, new_destination, follow_symlinks=False)  # Do not follow symlinks (fixed)
+    except OSError as e:
+        if e.errno != errno.EINVAL:
+            raise e
+```
 
-<b>Code Change Reference:</b>
+<i>With` follow_symlinks=Fals`e, if `new_source` is a symlink, the function will copy the symlink itself [rather than the file it points to](https://github.com/aws/aws-sam-cli/pull/7890/commits/af13758eb74a72bc0702229d6cfc7e5744520d99)​. In other words, the build output will contain a symlink with the same target, instead of a real file with the target’s contents.</i>
 
+<b>Code Change Reference:</b> The change was made in [Pull Request#7890](https://github.com/aws/aws-sam-cli/pull/7980) (<b>“fix: Keep symlinks when copying files after build”</b>) and released in v1.134.0. The GitHub diff of this PR confirms the addition of the `follow_symlinks=False` parameter to `shutil.copy2`, [along with updated unit tests to ensure symlinks are preserved](https://github.com/aws/aws-sam-cli/pull/7890/commits/af13758eb74a72bc0702229d6cfc7e5744520d99#:~:text=patched_os,follow_symlinks%3DFalse). The PR description explicitly notes: <i>“Symlinks will stop being transformed into copies of the files and keep their symlink status.”​</i> This means the build artifacts will contain symlinks (which reference the original file paths) instead of unauthorized copies of the file data.
 
 <b>How the Patch Resolves the Issue:</b>
 
