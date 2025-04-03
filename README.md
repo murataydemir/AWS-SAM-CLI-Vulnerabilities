@@ -55,15 +55,23 @@ _volumes = {
 <b>Remediation:</b> All users should upgrade to <b>AWS SAM CLI v1.133.0</b> or later to get this fix. After upgrading, the default behavior is safe. Only if you explicitly trust your project and need the old behavior should you use `sam build --use-container --mount-symlinks`. For most developers, leaving this flag off (the default) is recommended to ensure that symlinks cannot traverse outside the workspace. It’s also good practice to review any symlinks in your projects to ensure they do not point to sensitive locations.
 
 #### CVE-2025-3047 – Symlink Path Traversal in Container Build
-
+[GHSA-pp64-wj43-xqcr​](https://github.com/advisories/GHSA-pp64-wj43-xqcr) is a related vulnerability affecting AWS SAM CLI <b><= v1.133.0</b> (fixed in v1.134.0). A vulnerability in AWS SAM CLI’s <b>build artifact caching</b> could allow sensitive files to leak from the container back to the host workspace after a build. If a project included symlinks, after running `sam build --use-container`, the <b>contents of the symlink targets would be copied into the local build cache directory</b> as regular files or folders​. In effect, a developer without access to certain host files could gain access because those files’ contents end up in the `.aws-sam` build output on the host. For example, a symlink in the project pointing to `/secret/config` could result in the actual content of `/secret/config` appearing in the project’s `.aws-sam/build` folder after the container build, even if the user couldn’t read `/secret/config` directly.
 
 <b>Root Cause & Affected Component:</b> 
+
+
 <b>Patch (Fixed Code in v1.134.0):</b>
+
+
 <b>Code Change Reference:</b>
+
+
 <b>How the Patch Resolves the Issue:</b>
+
+
 <b>Remediation</b>
 
 <b>References:</b>
-- [AWS Security Bulletin AWS-2025-008](https://aws.amazon.com/security/security-bulletins/AWS-2025-008/) – <i>Issue with AWS SAM CLI (CVE-2025-3047, CVE-2025-3048</i>
+- [AWS Security Bulletin AWS-2025-008](https://aws.amazon.com/security/security-bulletins/AWS-2025-008/) – <i>Issue with AWS SAM CLI (CVE-2025-3047, CVE-2025-3048)</i>
 - [GitHub Advisory Database entries for CVE-2025-3047](https://github.com/advisories/GHSA-px37-jpqx-97q9)
 - [GitHub Advisory Database entries for CVE-2025-3048](https://github.com/advisories/GHSA-pp64-wj43-xqcr)
